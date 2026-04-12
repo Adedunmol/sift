@@ -10,7 +10,6 @@ import (
 
 type Checkpoint struct {
 	Offset    int64     `json:"offset"`
-	File      string    `json:"file"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
@@ -33,12 +32,11 @@ func (m *Manager) load() error {
 	return json.Unmarshal(data, &m.cp)
 }
 
-func (m *Manager) Save(offset int64, file string) error {
+func (m *Manager) Save(offset int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.cp.Offset = offset
-	m.cp.File = file
 	m.cp.UpdatedAt = time.Now().UTC()
 
 	data, err := json.MarshalIndent(m.cp, "", "  ")
