@@ -55,25 +55,3 @@ func (s *Stream) Next() (*Tweet, error) {
 func (s *Stream) Offset() int64 {
 	return s.offset
 }
-
-//file, _ := os.Open() // tweets.js
-//defer file.Close()
-//
-//cp, _ := checkpoint.New() // checkpoint.json
-//
-//
-//stream, _ := parser.NewStream(file, cp.Offset())
-//
-//for {
-//tweet, err := stream.Next()
-//if err == io.EOF {
-//break
-//}
-//if err != nil {
-//return err
-//}
-//
-//process(tweet)
-//
-//cp.Save(stream.Offset())
-//}

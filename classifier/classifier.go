@@ -120,7 +120,7 @@ func (g *Gemini) Process(tweets []parser.Tweet) ([]parser.Tweet, error) {
 
 	filteredTweets := make([]parser.Tweet, 0, len(tweets))
 	for _, id := range result.IDs {
-		filteredTweets = append(filteredTweets, tweets[id])
+		filteredTweets = append(filteredTweets, parser.Tweet{ID: id})
 	}
 
 	return filteredTweets, nil
