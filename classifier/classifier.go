@@ -12,7 +12,7 @@ import (
 )
 
 type Processor interface {
-	Process(tweets []parser.Tweet) ([]parser.Tweet, error)
+	Process(tweets []*parser.Tweet) ([]parser.Tweet, error)
 }
 
 type Gemini struct {
@@ -51,7 +51,7 @@ func NewGemini() *Gemini {
 	}
 }
 
-func (g *Gemini) Process(tweets []parser.Tweet) ([]parser.Tweet, error) {
+func (g *Gemini) Process(tweets []*parser.Tweet) ([]parser.Tweet, error) {
 	if len(tweets) == 0 {
 		return nil, nil
 	}
@@ -126,7 +126,7 @@ func (g *Gemini) Process(tweets []parser.Tweet) ([]parser.Tweet, error) {
 	return filteredTweets, nil
 }
 
-func buildPrompt(criteria Criteria, tweets []parser.Tweet) string {
+func buildPrompt(criteria Criteria, tweets []*parser.Tweet) string {
 	return fmt.Sprintf(`
 You are a strict tweet filtering system.
 
