@@ -1,4 +1,8 @@
-package classifier
+// Package httpclient provides a retrying HTTP client with exponential backoff.
+//
+// Extracted from the classifier package so it can be reused across
+// any service that makes outbound HTTP calls (Gemini, webhooks, etc.).
+package evaluator
 
 import (
 	"context"
@@ -8,18 +12,21 @@ import (
 	"time"
 )
 
+// Config controls retry and timeout behaviour.
 type Config struct {
 	Timeout       time.Duration
 	MaxRetries    int
-	RetryDelay    time.Duration // base delay
-	MaxRetryDelay time.Duration // max cap
+	RetryDelay    time.Duration // base delay for exponential backoff
+	MaxRetryDelay time.Duration // upper cap on backoff delay
 }
 
+// Client wraps net/http.Client with retry logic.
 type Client struct {
 	hc     http.Client
 	config Config
 }
 
+// New returns a Client configured with cfg.
 func New(cfg Config) *Client {
 	return &Client{
 		hc: http.Client{
@@ -29,6 +36,9 @@ func New(cfg Config) *Client {
 	}
 }
 
+// Do executes req, retrying on transient errors up to MaxRetries times.
+// The caller's context is respected on every attempt — if it is cancelled
+// or times out, Do returns immediately with ctx.Err().
 func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, error) {
 	var (
 		resp *http.Response
@@ -37,7 +47,6 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 
 	for attempt := 0; attempt <= c.config.MaxRetries; attempt++ {
 
-		// Apply backoff delay (skip first attempt)
 		if attempt > 0 {
 			delay := c.backoff(attempt - 1)
 
@@ -48,9 +57,10 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 			}
 		}
 
-		resp, err = c.hc.Do(req)
+		// Clone the request per attempt so the body can be re-read.
+		// Callers must ensure the body is re-readable (e.g. bytes.NewReader).
+		resp, err = c.hc.Do(req.WithContext(ctx))
 
-		// Success: no error and not retryable status
 		if err == nil && !isRetryable(resp.StatusCode) {
 			return resp, nil
 		}
@@ -65,9 +75,12 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 		return nil, fmt.Errorf("after %d attempts: %w", c.config.MaxRetries+1, err)
 	}
 
-	return resp, nil
+	// Exhausted retries but last response was a retryable status code.
+	return resp, fmt.Errorf("after %d attempts: retryable status persists", c.config.MaxRetries+1)
 }
 
+// backoff computes exponential delay for the given attempt index (0-based),
+// capped at MaxRetryDelay.
 func (c *Client) backoff(attempt int) time.Duration {
 	delay := c.config.RetryDelay << attempt
 
@@ -78,7 +91,7 @@ func (c *Client) backoff(attempt int) time.Duration {
 	return delay
 }
 
-// isRetryable determines if a status code should be retried
+// isRetryable reports whether the HTTP status code warrants a retry.
 func isRetryable(status int) bool {
 	switch status {
 	case http.StatusTooManyRequests,
