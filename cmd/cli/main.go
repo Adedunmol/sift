@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Adedunmol/sift/checkpoint"
-	"github.com/Adedunmol/sift/evaluator"
+	"github.com/Adedunmol/sift/core/evaluator"
 	"github.com/Adedunmol/sift/output"
 	"github.com/Adedunmol/sift/parser"
 	"io"
