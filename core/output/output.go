@@ -6,7 +6,7 @@
 package output
 
 import (
-	"github.com/Adedunmol/sift/parser"
+	"github.com/Adedunmol/sift/core/parser"
 )
 
 // Writer is the interface both the CLI and worker satisfy.

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Adedunmol/sift/parser"
+	"github.com/Adedunmol/sift/core/parser"
 )
 
 // FileWriter is a Writer backed by a local CSV file.

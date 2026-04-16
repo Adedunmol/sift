@@ -2,7 +2,7 @@
 //
 // Extracted from the classifier package so it can be reused across
 // any service that makes outbound HTTP calls (Gemini, webhooks, etc.).
-package evaluator
+package client
 
 import (
 	"context"

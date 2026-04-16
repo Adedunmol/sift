@@ -11,11 +11,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	client2 "github.com/Adedunmol/sift/core/client"
 	"net/http"
 	"os"
 	"time"
 
-	"github.com/Adedunmol/sift/parser"
+	"github.com/Adedunmol/sift/core/parser"
 )
 
 // Processor evaluates a batch of tweets and returns those that match
@@ -38,7 +39,7 @@ type Criteria struct {
 type Gemini struct {
 	baseURL  string
 	apiKey   string
-	client   *Client
+	client   *client2.Client
 	criteria Criteria
 }
 
@@ -61,7 +62,7 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 		baseURL:  "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
 		apiKey:   apiKey,
 		criteria: cfg.Criteria,
-		client: New(Config{
+		client: client2.New(client2.Config{
 			Timeout:       5 * time.Second,
 			MaxRetries:    5,
 			RetryDelay:    100 * time.Millisecond,
