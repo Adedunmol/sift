@@ -1,70 +1,26 @@
+// Package checkpoint manages resumable processing state.
+//
+// The Store interface decouples checkpoint logic from the storage backend,
+// allowing the CLI to use a local file while a backend worker uses Postgres
+// or Redis — without changing any processing logic.
 package checkpoint
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"sync"
 	"time"
 )
 
+// Checkpoint holds the current processing state for a job.
 type Checkpoint struct {
 	Offset    int64     `json:"offset"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type Manager struct {
-	path string
-	mu   sync.Mutex
-	cp   Checkpoint
-}
+// Store is the interface both the CLI and worker satisfy.
+// The CLI passes a FileStore; the worker passes a database-backed store.
+type Store interface {
+	// Save atomically persists the current offset.
+	Save(offset int64) error
 
-func (m *Manager) load() error {
-	data, err := os.ReadFile(m.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			m.cp = Checkpoint{Offset: 0}
-			return nil
-		}
-		return fmt.Errorf("open checkpoint: %w", err)
-	}
-
-	return json.Unmarshal(data, &m.cp)
-}
-
-func (m *Manager) Save(offset int64) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.cp.Offset = offset
-	m.cp.UpdatedAt = time.Now().UTC()
-
-	data, err := json.MarshalIndent(m.cp, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmpFile := m.path + ".tmp"
-
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpFile, m.path)
-}
-
-func (m *Manager) Offset() int64 {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.cp.Offset
-}
-
-func New(path string) (*Manager, error) {
-	m := &Manager{path: path}
-
-	if err := m.load(); err != nil {
-		return nil, err
-	}
-
-	return m, nil
+	// Offset returns the last saved offset, or 0 if none exists.
+	Offset() int64
 }

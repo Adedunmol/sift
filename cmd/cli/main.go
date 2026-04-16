@@ -5,7 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/Adedunmol/sift/checkpoint"
-	"github.com/Adedunmol/sift/classifier"
+	"github.com/Adedunmol/sift/evaluator"
 	"github.com/Adedunmol/sift/output"
 	"github.com/Adedunmol/sift/parser"
 	"io"
@@ -58,7 +58,7 @@ func (a *appEnv) fromArgs(args []string) error {
 
 func (a *appEnv) run() error {
 
-	gem := classifier.NewGemini()
+	gem := evaluator.NewGemini()
 
 	file, err := os.Open(a.archive)
 	if err != nil {
@@ -124,7 +124,7 @@ func (a *appEnv) processBatch(
 	cp *checkpoint.Manager,
 	stream *parser.Stream,
 	tweets []*parser.Tweet,
-	evaluator classifier.Processor,
+	evaluator evaluator.Processor,
 ) error {
 
 	filteredTweets, err := evaluator.Process(tweets)

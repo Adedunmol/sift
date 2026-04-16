@@ -1,49 +1,23 @@
+// Package output writes flagged tweets to a CSV sink.
+//
+// The Writer interface decouples the CSV format from the storage backend.
+// The CLI uses a FileWriter backed by a local file; the worker uses a
+// different Writer implementation that streams to object storage.
 package output
 
 import (
-	"encoding/csv"
-	"os"
-	"strconv"
-
 	"github.com/Adedunmol/sift/parser"
 )
 
-// OpenFile opens a CSV file in append mode.
-// Creates it if it doesn't exist.
-func OpenFile(path string) (*os.File, bool, error) {
-	_, err := os.Stat(path)
+// Writer is the interface both the CLI and worker satisfy.
+// Implementations must be safe for sequential use by a single goroutine
+// (the processing loop calls Write in order; callers are responsible for
+// their own synchronisation if multiple goroutines share a Writer).
+type Writer interface {
+	// Write appends flagged tweets to the output sink.
+	Write(tweets []parser.Tweet) error
 
-	fileExists := err == nil
-
-	f, err := os.OpenFile(
-		path,
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
-		0644,
-	)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return f, fileExists, nil
-}
-
-func WriteHeader(w *csv.Writer, fileAlreadyExists bool) error {
-	if fileAlreadyExists {
-		return nil
-	}
-	return w.Write([]string{"id", "text"})
-}
-
-// WriteTweets appends tweets to CSV
-func WriteTweets(w *csv.Writer, tweets []parser.Tweet) error {
-	for _, t := range tweets {
-		err := w.Write([]string{
-			strconv.FormatInt(t.ID, 10),
-			t.Text,
-		})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
+	// Flush ensures all buffered data is committed to the sink.
+	// Must be called before closing the underlying resource.
+	Flush() error
 }
