@@ -37,7 +37,7 @@ type Criteria struct {
 
 // Gemini is a Processor backed by Google's Gemini API.
 type Gemini struct {
-	baseURL  string
+	baseURL  string // optional; overrides default endpoint (used in tests)
 	apiKey   string
 	client   *client2.Client
 	criteria Criteria
@@ -46,6 +46,7 @@ type Gemini struct {
 // GeminiConfig holds everything needed to construct a Gemini processor.
 type GeminiConfig struct {
 	// APIKey defaults to the GEMINI_API_KEY env var if empty.
+	BaseURL  string // optional; overrides default endpoint (used in tests)
 	APIKey   string
 	Criteria Criteria
 }
@@ -58,8 +59,13 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 		apiKey = os.Getenv("GEMINI_API_KEY")
 	}
 
+	baseURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+	if cfg.BaseURL != "" {
+		baseURL = cfg.BaseURL
+	}
+
 	return &Gemini{
-		baseURL:  "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
+		baseURL:  baseURL,
 		apiKey:   apiKey,
 		criteria: cfg.Criteria,
 		client: client2.New(client2.Config{

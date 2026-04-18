@@ -1,32 +1,41 @@
 package main
 
 import (
-	"encoding/csv"
+	"context"
+	"errors"
 	"flag"
 	"fmt"
-	"github.com/Adedunmol/sift/checkpoint"
 	"github.com/Adedunmol/sift/core/evaluator"
-	"github.com/Adedunmol/sift/output"
-	"github.com/Adedunmol/sift/parser"
 	"io"
-	"net/http"
 	"os"
+
+	"github.com/Adedunmol/sift/core/checkpoint"
+	"github.com/Adedunmol/sift/core/output"
+	"github.com/Adedunmol/sift/core/parser"
 )
 
 func main() {
 	os.Exit(CLI(os.Args[1:]))
 }
 
+// CLI parses args, wires real dependencies, and runs the app.
+// Returns 0 on success, 1 on runtime error, 2 on argument error.
+// Separated from main() so tests can call it directly with controlled args.
 func CLI(args []string) int {
-	var app appEnv
-
-	err := app.fromArgs(args)
+	cfg, err := parseArgs(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "argument error: %v\n", err)
 		return 2
 	}
 
-	if err = app.run(); err != nil {
+	app, err := newApp(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "init error: %v\n", err)
+		return 1
+	}
+	//defer app.writer.Close()
+
+	if err := app.run(context.Background()); err != nil {
 		fmt.Fprintf(os.Stderr, "runtime error: %v\n", err)
 		return 1
 	}
@@ -34,84 +43,118 @@ func CLI(args []string) int {
 	return 0
 }
 
-type appEnv struct {
-	client   http.Client
-	archive  string
-	criteria string
+// config holds the raw values parsed from CLI flags.
+type config struct {
+	archivePath    string
+	checkpointPath string
+	outputPath     string
+	username       string
+	criteria       evaluator.Criteria
 }
 
-const DefaultCriteria = ""
+func parseArgs(args []string) (config, error) {
+	var cfg config
 
-func (a *appEnv) fromArgs(args []string) error {
 	fl := flag.NewFlagSet("sift", flag.ContinueOnError)
 
-	fl.StringVar(
-		&a.archive, "a", "tweets.js", "name of the archive",
-	)
+	fl.StringVar(&cfg.archivePath, "a", "tweets.js", "path to the X/Twitter archive JS file")
+	fl.StringVar(&cfg.checkpointPath, "cp", ".sift-checkpoint.json", "path to checkpoint file")
+	fl.StringVar(&cfg.outputPath, "o", "output.csv", "path to output CSV file")
+	fl.StringVar(&cfg.username, "u", "", "X/Twitter username (used to build tweet URLs)")
 
-	fl.StringVar(
-		&a.criteria, "c", DefaultCriteria, "criteria to filter tweets",
-	)
+	if err := fl.Parse(args); err != nil {
+		return config{}, err
+	}
 
-	return fl.Parse(args)
+	return cfg, nil
 }
 
-func (a *appEnv) run() error {
+// app holds injected dependencies. All fields are interfaces so tests
+// can substitute fakes without touching the filesystem or network.
+type app struct {
+	stream    streamer
+	processor evaluator.Processor
+	store     checkpoint.Store
+	writer    output.Writer
+	cleanup   func()
+}
 
-	gem := evaluator.NewGemini()
+// streamer is a local interface over parser.Stream so tests can inject
+// a fake tweet source. Only the methods the processing loop uses are included.
+type streamer interface {
+	Next(ctx context.Context) (*parser.Tweet, error)
+	Offset() int64
+}
 
-	file, err := os.Open(a.archive)
+// newApp wires the real filesystem and network dependencies for production use.
+func newApp(cfg config) (*app, error) {
+	store, err := checkpoint.NewFileStore(cfg.checkpointPath)
 	if err != nil {
-		return fmt.Errorf("open archive: %w", err)
+		return nil, fmt.Errorf("checkpoint init: %w", err)
 	}
-	defer file.Close()
 
-	cp, err := checkpoint.New("")
+	archiveFile, err := os.Open(cfg.archivePath)
 	if err != nil {
-		return fmt.Errorf("checkpoint init: %w", err)
+		return nil, fmt.Errorf("open archive: %w", err)
 	}
 
-	stream, err := parser.NewStream(file, cp.Offset())
+	stream, err := parser.NewStream(archiveFile, store.Offset(), cfg.username)
 	if err != nil {
-		return fmt.Errorf("parser init: %w", err)
+		archiveFile.Close()
+		return nil, fmt.Errorf("parser init: %w", err)
 	}
 
-	outFile, exists, err := output.OpenFile("output.csv")
+	writer, err := output.NewFileWriter(cfg.outputPath)
 	if err != nil {
-		return fmt.Errorf("open csv: %w", err)
-	}
-	defer outFile.Close()
-
-	writer := csv.NewWriter(outFile)
-
-	if err := output.WriteHeader(writer, exists); err != nil {
-		return fmt.Errorf("write header: %w", err)
+		archiveFile.Close()
+		return nil, fmt.Errorf("output init: %w", err)
 	}
 
-	const batchSize = 100
-	var tweets []*parser.Tweet
+	proc := evaluator.NewGemini(evaluator.GeminiConfig{
+		Criteria: cfg.criteria,
+	})
+
+	return &app{
+		stream:    stream,
+		processor: proc,
+		store:     store,
+		writer:    writer,
+		cleanup:   func() { archiveFile.Close() },
+	}, nil
+}
+
+const batchSize = 100
+
+// run executes the main processing loop.
+// ctx controls cancellation — the worker passes a job-scoped context;
+// the CLI passes context.Background().
+func (a *app) run(ctx context.Context) error {
+	defer a.cleanup()
+
+	var batch []*parser.Tweet
 
 	for {
-		tweet, err := stream.Next()
-		if err == io.EOF {
+		tweet, err := a.stream.Next(ctx)
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
 			return fmt.Errorf("stream read: %w", err)
 		}
 
-		tweets = append(tweets, tweet)
+		batch = append(batch, tweet)
 
-		if len(tweets) >= batchSize {
-			if err := a.processBatch(writer, cp, stream, tweets, gem); err != nil {
+		if len(batch) >= batchSize {
+			if err := a.processBatch(ctx, batch); err != nil {
 				return err
 			}
-			tweets = tweets[:0]
+			batch = batch[:0]
 		}
 	}
 
-	if len(tweets) > 0 {
-		if err := a.processBatch(writer, cp, stream, tweets, gem); err != nil {
+	// Flush the final partial batch.
+	if len(batch) > 0 {
+		if err := a.processBatch(ctx, batch); err != nil {
 			return err
 		}
 	}
@@ -119,29 +162,26 @@ func (a *appEnv) run() error {
 	return nil
 }
 
-func (a *appEnv) processBatch(
-	writer *csv.Writer,
-	cp *checkpoint.Manager,
-	stream *parser.Stream,
-	tweets []*parser.Tweet,
-	evaluator evaluator.Processor,
-) error {
-
-	filteredTweets, err := evaluator.Process(tweets)
+// processBatch evaluates one batch of tweets, writes flagged results,
+// and saves the checkpoint. All three steps use injected interfaces so
+// tests can verify behaviour without filesystem or network access.
+func (a *app) processBatch(ctx context.Context, batch []*parser.Tweet) error {
+	flagged, err := a.processor.Process(ctx, batch)
 	if err != nil {
-		return fmt.Errorf("process tweets: %w", err)
+		return fmt.Errorf("process batch: %w", err)
 	}
 
-	if err := output.WriteTweets(writer, filteredTweets); err != nil {
-		return fmt.Errorf("write csv: %w", err)
+	if len(flagged) > 0 {
+		if err := a.writer.Write(flagged); err != nil {
+			return fmt.Errorf("write output: %w", err)
+		}
+
+		if err := a.writer.Flush(); err != nil {
+			return fmt.Errorf("flush output: %w", err)
+		}
 	}
 
-	writer.Flush()
-	if err := writer.Error(); err != nil {
-		return fmt.Errorf("flush csv: %w", err)
-	}
-
-	if err := cp.Save(stream.Offset()); err != nil {
+	if err := a.store.Save(a.stream.Offset()); err != nil {
 		return fmt.Errorf("save checkpoint: %w", err)
 	}
 
