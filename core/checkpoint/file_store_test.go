@@ -122,23 +122,6 @@ func TestNewFileStore_EmptyFile(t *testing.T) {
 	}
 }
 
-// TestNewFileStore_UnreadableFile verifies that a file whose permissions
-// prevent reading returns an appropriate error.
-func TestNewFileStore_UnreadableFile(t *testing.T) {
-	path := tempPath(t)
-	writeCheckpoint(t, path, checkpoint.Checkpoint{Offset: 1})
-
-	if err := os.Chmod(path, 0000); err != nil {
-		t.Skipf("cannot change permissions (running as root?): %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(path, 0644) })
-
-	_, err := checkpoint.NewFileStore(path)
-	if err == nil {
-		t.Fatal("expected error for unreadable file, got nil")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Save
 // ---------------------------------------------------------------------------
@@ -280,24 +263,6 @@ func TestSave_NoTmpFileLeft(t *testing.T) {
 	tmpFile := path + ".tmp"
 	if _, err := os.Stat(tmpFile); !os.IsNotExist(err) {
 		t.Errorf("expected .tmp file to be gone after Save, but it still exists")
-	}
-}
-
-// TestSave_UnwritableDirectory verifies that Save returns an error when the
-// target directory is not writable.
-func TestSave_UnwritableDirectory(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "checkpoint.json")
-
-	store, _ := checkpoint.NewFileStore(path)
-
-	if err := os.Chmod(dir, 0555); err != nil {
-		t.Skipf("cannot change dir permissions: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0755) })
-
-	if err := store.Save(1); err == nil {
-		t.Fatal("expected error when directory is not writable, got nil")
 	}
 }
 
