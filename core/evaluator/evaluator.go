@@ -1,4 +1,4 @@
-// Package classifier evaluates tweets against user-defined criteria
+// Package evaluator evaluates tweets against user-defined criteria
 // using an external AI model.
 //
 // The Processor interface is the seam between processing logic and the
@@ -63,7 +63,12 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 		return nil
 	}
 
-	baseURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+	model := os.Getenv("GEMINI_MODEL")
+	if model == "" {
+		model = "gemini-pro"
+	}
+
+	baseURL := "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent" // "streamGenerateContent?alt=sse" to allow streaming of content
 	if cfg.BaseURL != "" {
 		baseURL = cfg.BaseURL
 	}
@@ -82,8 +87,6 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 }
 
 // Process sends tweets to Gemini and returns those flagged by the criteria.
-// The caller's context controls cancellation — important for the worker,
-// where a job can be cancelled mid-flight.
 func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser.Tweet, error) {
 	if len(tweets) == 0 {
 		return nil, nil
@@ -91,12 +94,24 @@ func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser
 
 	prompt := buildPrompt(g.criteria, tweets)
 
-	reqBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
+	reqBody := geminiRequest{
+		Contents: []geminiContent{
 			{
-				"parts": []map[string]string{
-					{"text": prompt},
+				Parts: []geminiPart{{Text: prompt}},
+			},
+		},
+		GenerationConfig: geminiGenerationConfig{
+			ResponseMIMEType: "application/json",
+			ResponseJSONSchema: geminiSchema{
+				Type: "object",
+				Properties: map[string]geminiSchema{
+					"ids": {
+						Type:        "array",
+						Description: "IDs of tweets that match all criteria.",
+						Items:       &geminiSchema{Type: "integer"},
+					},
 				},
+				Required: []string{"ids"},
 			},
 		},
 	}
@@ -112,7 +127,6 @@ func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
-
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := g.client.Do(ctx, req)
@@ -131,12 +145,13 @@ func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser
 		return nil, fmt.Errorf("empty response from gemini")
 	}
 
+	// With responseMimeType=application/json and a schema, the model returns
+	// structured JSON directly in the text field — no prompt-engineering needed.
 	rawText := geminiResp.Candidates[0].Content.Parts[0].Text
 
 	var result struct {
 		IDs []int64 `json:"ids"`
 	}
-
 	if err := json.Unmarshal([]byte(rawText), &result); err != nil {
 		return nil, fmt.Errorf("parse model output: %w\nraw: %s", err, rawText)
 	}
@@ -149,8 +164,36 @@ func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser
 	return flagged, nil
 }
 
-// geminiResponse mirrors the Gemini API response envelope.
-// Unexported because callers only interact with []parser.Tweet.
+// Request types
+
+type geminiRequest struct {
+	Contents         []geminiContent        `json:"contents"`
+	GenerationConfig geminiGenerationConfig `json:"generationConfig"`
+}
+
+type geminiContent struct {
+	Parts []geminiPart `json:"parts"`
+}
+
+type geminiPart struct {
+	Text string `json:"text"`
+}
+
+type geminiGenerationConfig struct {
+	ResponseMIMEType   string       `json:"responseMimeType"`
+	ResponseJSONSchema geminiSchema `json:"responseJsonSchema"`
+}
+
+type geminiSchema struct {
+	Type        string                  `json:"type"`
+	Description string                  `json:"description,omitempty"`
+	Properties  map[string]geminiSchema `json:"properties,omitempty"`
+	Items       *geminiSchema           `json:"items,omitempty"`
+	Required    []string                `json:"required,omitempty"`
+}
+
+// Response types
+
 type geminiResponse struct {
 	Candidates []struct {
 		Content struct {
@@ -175,17 +218,8 @@ TWEETS:
 %s
 
 RULES:
-- Return ONLY valid JSON
-- Do NOT include explanations
-- Do NOT include extra text
-- Output format MUST be:
-
-{
-  "ids": [1, 2, 3]
-}
-
-- "ids" must contain ONLY tweet IDs that match the criteria
-- If none match, return: { "ids": [] }
+- Select ONLY tweet IDs that match ALL criteria
+- If none match, return an empty ids array
 `,
 		mustJSON(criteria),
 		mustJSON(tweets),

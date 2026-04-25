@@ -1,2 +1,3 @@
 tweets.js
 ./cmd/cli/bin
+.env
