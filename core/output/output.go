@@ -15,7 +15,7 @@ import (
 // their own synchronisation if multiple goroutines share a Writer).
 type Writer interface {
 	// Write appends flagged tweets to the output sink.
-	Write(tweets []parser.Tweet) error
+	Write(tweets []*parser.Tweet) error
 
 	// Flush ensures all buffered data is committed to the sink.
 	// Must be called before closing the underlying resource.

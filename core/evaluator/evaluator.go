@@ -22,7 +22,7 @@ import (
 // Processor evaluates a batch of tweets and returns those that match
 // the configured criteria. Implementations must be safe for concurrent use.
 type Processor interface {
-	Process(ctx context.Context, tweets []*parser.Tweet) ([]parser.Tweet, error)
+	Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser.Tweet, error)
 }
 
 // Criteria defines what the model should flag for deletion.
@@ -80,7 +80,7 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 // Process sends tweets to Gemini and returns those flagged by the criteria.
 // The caller's context controls cancellation — important for the worker,
 // where a job can be cancelled mid-flight.
-func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]parser.Tweet, error) {
+func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser.Tweet, error) {
 	if len(tweets) == 0 {
 		return nil, nil
 	}
@@ -137,9 +137,9 @@ func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]parser.
 		return nil, fmt.Errorf("parse model output: %w\nraw: %s", err, rawText)
 	}
 
-	flagged := make([]parser.Tweet, 0, len(result.IDs))
+	flagged := make([]*parser.Tweet, 0, len(result.IDs))
 	for _, id := range result.IDs {
-		flagged = append(flagged, parser.Tweet{ID: id})
+		flagged = append(flagged, &parser.Tweet{ID: id})
 	}
 
 	return flagged, nil

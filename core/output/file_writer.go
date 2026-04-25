@@ -53,7 +53,7 @@ func (w *FileWriter) writeHeader() error {
 
 // Write appends one CSV row per tweet. The delete column is set to "false"
 // by default — the user reviews the CSV and marks rows for deletion manually.
-func (w *FileWriter) Write(tweets []parser.Tweet) error {
+func (w *FileWriter) Write(tweets []*parser.Tweet) error {
 	for _, t := range tweets {
 		row := []string{
 			strconv.FormatInt(t.ID, 10),
