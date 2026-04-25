@@ -69,6 +69,10 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 			io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
+
+		if req.GetBody != nil {
+			req.Body, _ = req.GetBody()
+		}
 	}
 
 	if err != nil {
@@ -76,7 +80,7 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 	}
 
 	// Exhausted retries but last response was a retryable status code.
-	return resp, fmt.Errorf("after %d attempts: retryable status persists", c.config.MaxRetries+1)
+	return resp, fmt.Errorf("after %d attempts: retryable status persists (%d)", c.config.MaxRetries+1, resp.StatusCode)
 }
 
 // backoff computes exponential delay for the given attempt index (0-based),

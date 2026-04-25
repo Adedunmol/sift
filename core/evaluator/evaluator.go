@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	client2 "github.com/Adedunmol/sift/core/client"
+	"io"
 	"net/http"
 	"os"
 	"time"
@@ -65,10 +66,11 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 
 	model := os.Getenv("GEMINI_MODEL")
 	if model == "" {
-		model = "gemini-pro"
+		model = "gemini-3-flash-preview"
 	}
 
-	baseURL := "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent" // "streamGenerateContent?alt=sse" to allow streaming of content
+	//baseURL := "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent" // "streamGenerateContent?alt=sse" to allow streaming of content
+	baseURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
 	if cfg.BaseURL != "" {
 		baseURL = cfg.BaseURL
 	}
@@ -78,10 +80,10 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 		apiKey:   apiKey,
 		criteria: cfg.Criteria,
 		client: client2.New(client2.Config{
-			Timeout:       5 * time.Second,
-			MaxRetries:    5,
-			RetryDelay:    100 * time.Millisecond,
-			MaxRetryDelay: 2 * time.Second,
+			Timeout:       120 * time.Second,
+			MaxRetries:    2,
+			RetryDelay:    2 * time.Second,
+			MaxRetryDelay: 10 * time.Second,
 		}),
 	}
 }
@@ -127,6 +129,11 @@ func (g *Gemini) Process(ctx context.Context, tweets []*parser.Tweet) ([]*parser
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
+
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(bodyBytes)), nil
+	}
+
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := g.client.Do(ctx, req)

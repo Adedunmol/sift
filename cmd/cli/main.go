@@ -53,6 +53,7 @@ type config struct {
 	checkpointPath string
 	outputPath     string
 	username       string
+	apiKey         string
 	criteria       evaluator.Criteria
 }
 
@@ -64,9 +65,14 @@ func parseArgs(args []string) (config, error) {
 	fl.StringVar(&cfg.checkpointPath, "cp", ".sift-checkpoint.json", "path to checkpoint file")
 	fl.StringVar(&cfg.outputPath, "o", "output.csv", "path to output CSV file")
 	fl.StringVar(&cfg.username, "u", "", "X/Twitter username (used to build tweet URLs)")
+	fl.StringVar(&cfg.apiKey, "k", "", "GEMINI API KEY")
 
 	if err := fl.Parse(args); err != nil {
 		return config{}, err
+	}
+
+	if cfg.apiKey == "" {
+		return config{}, errors.New("missing GEMINI API key")
 	}
 
 	return cfg, nil
@@ -118,6 +124,7 @@ func newApp(cfg config) (*app, error) {
 
 	proc := evaluator.NewGemini(evaluator.GeminiConfig{
 		Criteria: CRITERIA,
+		APIKey:   cfg.apiKey,
 	})
 
 	if proc == nil {
