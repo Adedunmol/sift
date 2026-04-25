@@ -14,6 +14,13 @@ import (
 	"github.com/Adedunmol/sift/core/parser"
 )
 
+var CRITERIA = evaluator.Criteria{
+	ForbiddenWords:    []string{"crypto"},
+	ProfessionalCheck: true,
+	Tone:              "respectful",
+	ExcludePolitics:   true,
+}
+
 func main() {
 	os.Exit(CLI(os.Args[1:]))
 }
@@ -110,8 +117,12 @@ func newApp(cfg config) (*app, error) {
 	}
 
 	proc := evaluator.NewGemini(evaluator.GeminiConfig{
-		Criteria: cfg.criteria,
+		Criteria: CRITERIA,
 	})
+
+	if proc == nil {
+		return nil, errors.New("gemini init: no credentials found")
+	}
 
 	return &app{
 		stream:    stream,

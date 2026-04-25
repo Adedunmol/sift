@@ -59,6 +59,10 @@ func NewGemini(cfg GeminiConfig) *Gemini {
 		apiKey = os.Getenv("GEMINI_API_KEY")
 	}
 
+	if apiKey == "" {
+		return nil
+	}
+
 	baseURL := "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 	if cfg.BaseURL != "" {
 		baseURL = cfg.BaseURL

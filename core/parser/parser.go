@@ -59,8 +59,15 @@ func NewStream(r io.ReadSeeker, partIndex int, startOffset int64, username strin
 		return nil, fmt.Errorf("part%d: expected '[' after JS prefix, got %q", partIndex, buf)
 	}
 
+	dec := json.NewDecoder(io.MultiReader(bytes.NewReader(buf), r))
+
+	// Consume the opening '[' so subsequent Decode calls land on individual objects.
+	if _, err := dec.Token(); err != nil {
+		return nil, fmt.Errorf("read opening '[': %w", err)
+	}
+
 	return &Stream{
-		dec:      json.NewDecoder(io.MultiReader(bytes.NewReader(buf), r)),
+		dec:      dec,
 		offset:   0,
 		username: username,
 	}, nil
